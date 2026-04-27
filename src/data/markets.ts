@@ -1,0 +1,51 @@
+import type { Coin, Currency } from '../types';
+
+export const currencies: Currency[] = [
+  { code: 'USD', name: 'Доллар США', symbol: '$', country: 'США' },
+  { code: 'EUR', name: 'Евро', symbol: '€', country: 'Еврозона' },
+  { code: 'RUB', name: 'Российский рубль', symbol: '₽', country: 'Россия' },
+  { code: 'GBP', name: 'Фунт стерлингов', symbol: '£', country: 'Великобритания' },
+  { code: 'CNY', name: 'Китайский юань', symbol: '¥', country: 'Китай' },
+  { code: 'JPY', name: 'Японская иена', symbol: '¥', country: 'Япония' },
+  { code: 'CHF', name: 'Швейцарский франк', symbol: 'Fr', country: 'Швейцария' },
+  { code: 'CAD', name: 'Канадский доллар', symbol: '$', country: 'Канада' },
+  { code: 'AUD', name: 'Австралийский доллар', symbol: '$', country: 'Австралия' },
+  { code: 'HKD', name: 'Гонконгский доллар', symbol: '$', country: 'Гонконг' },
+  { code: 'SGD', name: 'Сингапурский доллар', symbol: '$', country: 'Сингапур' },
+  { code: 'AED', name: 'Дирхам ОАЭ', symbol: 'د.إ', country: 'ОАЭ' },
+  { code: 'TRY', name: 'Турецкая лира', symbol: '₺', country: 'Турция' },
+  { code: 'INR', name: 'Индийская рупия', symbol: '₹', country: 'Индия' },
+  { code: 'BRL', name: 'Бразильский реал', symbol: 'R$', country: 'Бразилия' },
+  { code: 'MXN', name: 'Мексиканское песо', symbol: '$', country: 'Мексика' },
+  { code: 'KRW', name: 'Южнокорейская вона', symbol: '₩', country: 'Южная Корея' },
+  { code: 'SEK', name: 'Шведская крона', symbol: 'kr', country: 'Швеция' },
+  { code: 'NOK', name: 'Норвежская крона', symbol: 'kr', country: 'Норвегия' },
+  { code: 'DKK', name: 'Датская крона', symbol: 'kr', country: 'Дания' },
+  { code: 'PLN', name: 'Польский злотый', symbol: 'zł', country: 'Польша' },
+  { code: 'CZK', name: 'Чешская крона', symbol: 'Kč', country: 'Чехия' },
+  { code: 'HUF', name: 'Венгерский форинт', symbol: 'Ft', country: 'Венгрия' },
+  { code: 'THB', name: 'Тайский бат', symbol: '฿', country: 'Таиланд' },
+  { code: 'ZAR', name: 'Южноафриканский рэнд', symbol: 'R', country: 'ЮАР' },
+  { code: 'ILS', name: 'Израильский шекель', symbol: '₪', country: 'Израиль' },
+  { code: 'SAR', name: 'Саудовский риял', symbol: '﷼', country: 'Саудовская Аравия' },
+  { code: 'IDR', name: 'Индонезийская рупия', symbol: 'Rp', country: 'Индонезия' },
+  { code: 'MYR', name: 'Малайзийский ринггит', symbol: 'RM', country: 'Малайзия' },
+  { code: 'NZD', name: 'Новозеландский доллар', symbol: '$', country: 'Новая Зеландия' },
+];
+
+export const coins: Coin[] = [
+  { id: 'bitcoin', code: 'BTC', name: 'Bitcoin' },
+  { id: 'ethereum', code: 'ETH', name: 'Ethereum' },
+  { id: 'the-open-network', code: 'TON', name: 'Toncoin' },
+  { id: 'solana', code: 'SOL', name: 'Solana' },
+  { id: 'binancecoin', code: 'BNB', name: 'BNB' },
+  { id: 'ripple', code: 'XRP', name: 'XRP' },
+  { id: 'cardano', code: 'ADA', name: 'Cardano' },
+  { id: 'dogecoin', code: 'DOGE', name: 'Dogecoin' },
+  { id: 'tron', code: 'TRX', name: 'TRON' },
+  { id: 'tether', code: 'USDT', name: 'Tether', stablecoin: true },
+  { id: 'usd-coin', code: 'USDC', name: 'USD Coin', stablecoin: true },
+  { id: 'litecoin', code: 'LTC', name: 'Litecoin' },
+];
+
+export const defaultBaseCurrency = 'RUB';
