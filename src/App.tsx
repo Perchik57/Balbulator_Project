@@ -380,15 +380,29 @@ function ResultValue({ label, value }: { label: string; value: string }) {
 function SmartResultPanel({
   value,
   detail,
+  secondaryResults,
+  onSelectSecondary,
 }: {
   value: string;
   detail: string;
+  secondaryResults: Array<{ code: string; value: string }>;
+  onSelectSecondary: (code: string) => void;
 }) {
   return (
     <section className="smart-result-panel" aria-live="polite">
       <span>Primary result</span>
       <strong>{value}</strong>
       <p>{detail}</p>
+      {secondaryResults.length > 0 && (
+        <div className="smart-secondary-row" aria-label="Favorite currency results">
+          {secondaryResults.map((result) => (
+            <button className="smart-secondary-chip" key={result.code} onClick={() => onSelectSecondary(result.code)} type="button">
+              <span>{result.code}</span>
+              <strong>{result.value}</strong>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -416,6 +430,7 @@ function CalculatorScreen({
   const [fromCurrency, setFromCurrency] = useState('USD');
   const [toCurrency, setToCurrency] = useState('RUB');
   const [coinCode, setCoinCode] = useState('BTC');
+  const { favorites } = useFavorites();
 
   const selectFavoriteInCalculator = useCallback((code: string) => {
     if (currencies.some((currency) => currency.code === code)) {
@@ -448,27 +463,31 @@ function CalculatorScreen({
     const price = getCoinPrice(cryptoData, coinCode);
     return price ? numericAmount * price.usd : null;
   }, [coinCode, cryptoData, numericAmount]);
-  const convertSmartOperand = useCallback(
-    ({ amount, code }: { amount: number; code: string }) => {
+  const makeSmartConverter = useCallback(
+    (targetCode: string) => ({ amount, code }: { amount: number; code: string }) => {
       const normalizedCode = code.toUpperCase();
 
       if (currencies.some((currency) => currency.code === normalizedCode)) {
-        return convertCurrency(amount, normalizedCode, toCurrency, ratesData);
+        return convertCurrency(amount, normalizedCode, targetCode, ratesData);
       }
 
       if (coins.some((coinItem) => coinItem.code === normalizedCode)) {
         const price = getCoinPrice(cryptoData, normalizedCode);
         if (!price) return null;
 
-        if (toCurrency === 'USD') return amount * price.usd;
-        if (toCurrency === 'RUB') return amount * price.rub;
+        if (targetCode === 'USD') return amount * price.usd;
+        if (targetCode === 'RUB') return amount * price.rub;
 
-        return convertCurrency(amount * price.usd, 'USD', toCurrency, ratesData);
+        return convertCurrency(amount * price.usd, 'USD', targetCode, ratesData);
       }
 
       return null;
     },
-    [cryptoData, ratesData, toCurrency],
+    [cryptoData, ratesData],
+  );
+  const convertSmartOperand = useMemo(
+    () => makeSmartConverter(toCurrency),
+    [makeSmartConverter, toCurrency],
   );
   const smartMathResult = useMemo(
     () => evaluateSmartMath(smartExpression, {
@@ -479,6 +498,26 @@ function CalculatorScreen({
     }),
     [convertSmartOperand, fromCurrency, smartExpression, toCurrency],
   );
+  const secondarySmartResults = useMemo(() => {
+    if (smartMathResult.status !== 'ok') return [];
+
+    return favorites
+      .filter((code) => code !== toCurrency && currencies.some((currency) => currency.code === code))
+      .slice(0, 3)
+      .map((code) => {
+        const result = evaluateSmartMath(smartExpression, {
+          sourceCode: fromCurrency,
+          targetCode: code,
+          convert: makeSmartConverter(code),
+          format: formatSmartNumber,
+        });
+
+        return result.status === 'ok'
+          ? { code, value: `${formatMoney(result.value, 4)} ${code}` }
+          : null;
+      })
+      .filter((result): result is { code: string; value: string } => result !== null);
+  }, [favorites, fromCurrency, makeSmartConverter, smartExpression, smartMathResult.status, toCurrency]);
 
   const smartResult = (() => {
     if (smartMathResult.status === 'empty' || smartMathResult.status === 'incomplete') {
@@ -684,7 +723,12 @@ function CalculatorScreen({
             badge={<RateBadge label={`${fromCurrency}/${toCurrency}`} value={fiatRate === null ? '...' : formatMoney(fiatRate, 4)} stale={ratesData?.isStale} />}
           />
 
-          <SmartResultPanel value={smartResult.value} detail={smartResult.detail} />
+          <SmartResultPanel
+            value={smartResult.value}
+            detail={smartResult.detail}
+            secondaryResults={secondarySmartResults}
+            onSelectSecondary={setToCurrency}
+          />
 
           <div className="glass-card stack smart-converter-controls">
             <CurrencyChips label="From" value={fromCurrency} onChange={setFromCurrency} options={currencies.slice(0, 12)} />
