@@ -1,5 +1,7 @@
 export type AppTab = 'calculator' | 'favorites' | 'markets' | 'settings';
 
+export type CalculatorView = 'simple' | 'smart';
+
 export type CalculatorMode = 'standard' | 'fiat' | 'crypto';
 
 export type Currency = {

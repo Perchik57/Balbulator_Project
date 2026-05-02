@@ -3,8 +3,9 @@ import { fetchCryptoPrices, getCachedCryptoPrices } from './api/cryptoPrices';
 import { fetchFiatRates, getCachedFiatRates } from './api/exchangeRates';
 import { coins, currencies, defaultBaseCurrency } from './data/markets';
 import { useFavorites } from './favorites';
+import { evaluateSmartMath } from './smartMath';
 import { initializeTelegramApp } from './telegram';
-import type { AppTab, CalculatorMode, Coin, CryptoPrices, Currency, FiatRates, TelegramLaunchState } from './types';
+import type { AppTab, CalculatorMode, CalculatorView, Coin, CryptoPrices, Currency, FiatRates, TelegramLaunchState } from './types';
 
 const fiatBaseOptions = ['RUB', 'USD', 'EUR', 'CNY'];
 const navItems: Array<{ id: AppTab; label: string; icon: string }> = [
@@ -73,6 +74,12 @@ function formatCompact(value: number) {
   return new Intl.NumberFormat('ru-RU', {
     notation: 'compact',
     maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatSmartNumber(value: number) {
+  return new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: 8,
   }).format(value);
 }
 
@@ -344,6 +351,22 @@ function ResultValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SmartResultPanel({
+  value,
+  detail,
+}: {
+  value: string;
+  detail: string;
+}) {
+  return (
+    <section className="smart-result-panel" aria-live="polite">
+      <span>Primary result</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </section>
+  );
+}
+
 function CalculatorScreen({
   ratesData,
   rubRate,
@@ -359,8 +382,10 @@ function CalculatorScreen({
   cryptoLoading: boolean;
   selection: CalculatorSelection | null;
 }) {
+  const [calculatorView, setCalculatorView] = useState<CalculatorView>('simple');
   const [mode, setMode] = useState<CalculatorMode>('standard');
   const [expression, setExpression] = useState('0');
+  const [smartExpression, setSmartExpression] = useState('0');
   const [amount, setAmount] = useState('100');
   const [fromCurrency, setFromCurrency] = useState('USD');
   const [toCurrency, setToCurrency] = useState('RUB');
@@ -397,6 +422,56 @@ function CalculatorScreen({
     const price = getCoinPrice(cryptoData, coinCode);
     return price ? numericAmount * price.usd : null;
   }, [coinCode, cryptoData, numericAmount]);
+  const smartMathResult = useMemo(() => evaluateSmartMath(smartExpression), [smartExpression]);
+  const smartAmount = smartMathResult.status === 'ok' ? smartMathResult.value : null;
+  const smartConvertedResult = useMemo(
+    () => smartAmount === null ? null : convertCurrency(smartAmount, fromCurrency, toCurrency, ratesData),
+    [fromCurrency, ratesData, smartAmount, toCurrency],
+  );
+
+  const smartResult = (() => {
+    if (smartMathResult.status === 'empty' || smartMathResult.status === 'incomplete') {
+      return {
+        value: 'Enter an expression',
+        detail: `${fromCurrency} to ${toCurrency}`,
+      };
+    }
+
+    if (smartMathResult.status === 'invalid') {
+      return {
+        value: 'Invalid expression',
+        detail: 'Use numbers and +, -, *, /',
+      };
+    }
+
+    if (smartMathResult.status === 'division-by-zero') {
+      return {
+        value: 'Cannot divide by zero',
+        detail: 'Adjust the divisor',
+      };
+    }
+
+    if (smartMathResult.status !== 'ok') {
+      return {
+        value: 'Invalid expression',
+        detail: 'Use numbers and +, -, *, /',
+      };
+    }
+
+    const evaluatedAmount = smartMathResult.value;
+
+    if (smartConvertedResult === null) {
+      return {
+        value: 'Rate unavailable',
+        detail: `${formatSmartNumber(evaluatedAmount)} ${fromCurrency}`,
+      };
+    }
+
+    return {
+      value: `${formatMoney(smartConvertedResult, 4)} ${toCurrency}`,
+      detail: `${formatSmartNumber(evaluatedAmount)} ${fromCurrency}`,
+    };
+  })();
 
   const displayValue = mode === 'standard' ? expression : amount;
   const displayResult = mode === 'fiat'
@@ -424,6 +499,53 @@ function CalculatorScreen({
     if (key === '.' && amount.includes('.')) return;
     if (!/^\d|\.$/.test(key)) return;
     setAmount((current) => (current === '0' && key !== '.' ? key : `${current}${key}`));
+  };
+
+  const pushSmartKey = (key: string) => {
+    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged();
+
+    if (key === 'C') {
+      setSmartExpression('0');
+      return;
+    }
+
+    if (key === '⌫') {
+      setSmartExpression((current) => (current.length > 1 ? current.slice(0, -1) : '0'));
+      return;
+    }
+
+    if (key === '=' || key === '%') return;
+
+    const normalizedKey = key === '×' ? '*' : key === '÷' ? '/' : key;
+    const isDigit = /^\d$/.test(normalizedKey);
+    const isOperator = ['+', '-', '*', '/'].includes(normalizedKey);
+
+    if (!isDigit && normalizedKey !== '.' && !isOperator) return;
+
+    setSmartExpression((current) => {
+      if (isDigit) {
+        return current === '0' ? normalizedKey : `${current}${normalizedKey}`;
+      }
+
+      if (normalizedKey === '.') {
+        const currentParts = current.split(/[+\-*/]/);
+        const currentNumber = currentParts[currentParts.length - 1] ?? '';
+        if (currentNumber.includes('.')) return current;
+        return `${current}.`;
+      }
+
+      if (isOperator) {
+        if (/[+\-*/.]$/.test(current)) {
+          return normalizedKey === '-' && /[*+/]$/.test(current)
+            ? `${current}${normalizedKey}`
+            : `${current.slice(0, -1)}${normalizedKey}`;
+        }
+
+        return `${current}${normalizedKey}`;
+      }
+
+      return current;
+    });
   };
 
   const pushKey = (key: string) => {
@@ -462,37 +584,67 @@ function CalculatorScreen({
 
   return (
     <section className="screen calculator-screen">
-      <ScreenHeader eyebrow="Balbulator" title="Calculator" meta={mode === 'standard' ? 'Standard' : mode === 'fiat' ? 'Fiat conversion' : 'Crypto conversion'} />
-
-      <NumberDisplay label={mode === 'standard' ? 'Expression' : 'Amount'} value={displayValue} result={displayResult} badge={displayBadge} />
+      <ScreenHeader eyebrow="Balbulator" title="Calculator" meta={calculatorView === 'smart' ? 'Smart conversion' : mode === 'standard' ? 'Standard' : mode === 'fiat' ? 'Fiat conversion' : 'Crypto conversion'} />
 
       <Segment
-        value={mode}
-        onChange={setMode}
+        value={calculatorView}
+        onChange={setCalculatorView}
         options={[
-          { value: 'standard', label: 'Calc' },
-          { value: 'fiat', label: 'Fiat' },
-          { value: 'crypto', label: 'Crypto' },
+          { value: 'simple', label: 'Simple' },
+          { value: 'smart', label: 'Smart' },
         ]}
       />
 
-      {mode === 'fiat' && (
-        <div className="glass-card stack">
-          <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
-          <CurrencyChips label="From" value={fromCurrency} onChange={setFromCurrency} options={currencies.slice(0, 12)} />
-          <CurrencyChips label="To" value={toCurrency} onChange={setToCurrency} options={currencies.slice(0, 12)} />
-        </div>
-      )}
+      {calculatorView === 'simple' ? (
+        <>
+          <NumberDisplay label={mode === 'standard' ? 'Expression' : 'Amount'} value={displayValue} result={displayResult} badge={displayBadge} />
 
-      {mode === 'crypto' && (
-        <div className="glass-card stack">
-          <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
-          <CoinChips value={coinCode} onChange={setCoinCode} />
-          <ResultValue label="RUB" value={coinPrice ? `${formatMoney(numericAmount * coinPrice.rub, 2)} ₽` : 'Price loading'} />
-        </div>
-      )}
+          <Segment
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'standard', label: 'Calc' },
+              { value: 'fiat', label: 'Fiat' },
+              { value: 'crypto', label: 'Crypto' },
+            ]}
+          />
 
-      <Keypad onPress={pushKey} />
+          {mode === 'fiat' && (
+            <div className="glass-card stack">
+              <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
+              <CurrencyChips label="From" value={fromCurrency} onChange={setFromCurrency} options={currencies.slice(0, 12)} />
+              <CurrencyChips label="To" value={toCurrency} onChange={setToCurrency} options={currencies.slice(0, 12)} />
+            </div>
+          )}
+
+          {mode === 'crypto' && (
+            <div className="glass-card stack">
+              <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
+              <CoinChips value={coinCode} onChange={setCoinCode} />
+              <ResultValue label="RUB" value={coinPrice ? `${formatMoney(numericAmount * coinPrice.rub, 2)} ₽` : 'Price loading'} />
+            </div>
+          )}
+
+          <Keypad onPress={pushKey} />
+        </>
+      ) : (
+        <>
+          <NumberDisplay
+            label="Smart expression"
+            value={smartExpression}
+            badge={<RateBadge label={`${fromCurrency}/${toCurrency}`} value={fiatRate === null ? '...' : formatMoney(fiatRate, 4)} stale={ratesData?.isStale} />}
+          />
+
+          <SmartResultPanel value={smartResult.value} detail={smartResult.detail} />
+
+          <div className="glass-card stack smart-converter-controls">
+            <CurrencyChips label="From" value={fromCurrency} onChange={setFromCurrency} options={currencies.slice(0, 12)} />
+            <CurrencyChips label="To" value={toCurrency} onChange={setToCurrency} options={currencies.slice(0, 12)} />
+          </div>
+
+          <Keypad onPress={pushSmartKey} />
+        </>
+      )}
     </section>
   );
 }
