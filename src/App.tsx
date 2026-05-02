@@ -245,6 +245,32 @@ function NumberDisplay({
   );
 }
 
+function SmartExpressionDisplay({
+  value,
+  onChange,
+  badge,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  badge?: ReactNode;
+}) {
+  return (
+    <section className="number-display smart-expression-display" aria-live="polite">
+      <div className="display-topline">
+        <span>Smart expression</span>
+        {badge}
+      </div>
+      <input
+        className="smart-expression-input"
+        value={value}
+        onChange={(event) => onChange(event.target.value.toUpperCase())}
+        aria-label="Smart expression"
+        spellCheck={false}
+      />
+    </section>
+  );
+}
+
 function CurrencyChips({
   label,
   value,
@@ -422,11 +448,36 @@ function CalculatorScreen({
     const price = getCoinPrice(cryptoData, coinCode);
     return price ? numericAmount * price.usd : null;
   }, [coinCode, cryptoData, numericAmount]);
-  const smartMathResult = useMemo(() => evaluateSmartMath(smartExpression), [smartExpression]);
-  const smartAmount = smartMathResult.status === 'ok' ? smartMathResult.value : null;
-  const smartConvertedResult = useMemo(
-    () => smartAmount === null ? null : convertCurrency(smartAmount, fromCurrency, toCurrency, ratesData),
-    [fromCurrency, ratesData, smartAmount, toCurrency],
+  const convertSmartOperand = useCallback(
+    ({ amount, code }: { amount: number; code: string }) => {
+      const normalizedCode = code.toUpperCase();
+
+      if (currencies.some((currency) => currency.code === normalizedCode)) {
+        return convertCurrency(amount, normalizedCode, toCurrency, ratesData);
+      }
+
+      if (coins.some((coinItem) => coinItem.code === normalizedCode)) {
+        const price = getCoinPrice(cryptoData, normalizedCode);
+        if (!price) return null;
+
+        if (toCurrency === 'USD') return amount * price.usd;
+        if (toCurrency === 'RUB') return amount * price.rub;
+
+        return convertCurrency(amount * price.usd, 'USD', toCurrency, ratesData);
+      }
+
+      return null;
+    },
+    [cryptoData, ratesData, toCurrency],
+  );
+  const smartMathResult = useMemo(
+    () => evaluateSmartMath(smartExpression, {
+      sourceCode: fromCurrency,
+      targetCode: toCurrency,
+      convert: convertSmartOperand,
+      format: formatSmartNumber,
+    }),
+    [convertSmartOperand, fromCurrency, smartExpression, toCurrency],
   );
 
   const smartResult = (() => {
@@ -440,7 +491,7 @@ function CalculatorScreen({
     if (smartMathResult.status === 'invalid') {
       return {
         value: 'Invalid expression',
-        detail: 'Use numbers and +, -, *, /',
+        detail: 'Use numbers, currency codes, and +, -, *, /',
       };
     }
 
@@ -451,25 +502,23 @@ function CalculatorScreen({
       };
     }
 
-    if (smartMathResult.status !== 'ok') {
+    if (smartMathResult.status === 'rate-unavailable') {
       return {
-        value: 'Invalid expression',
-        detail: 'Use numbers and +, -, *, /',
+        value: 'Rate unavailable',
+        detail: `${fromCurrency} to ${toCurrency}`,
       };
     }
 
-    const evaluatedAmount = smartMathResult.value;
-
-    if (smartConvertedResult === null) {
+    if (smartMathResult.status !== 'ok') {
       return {
-        value: 'Rate unavailable',
-        detail: `${formatSmartNumber(evaluatedAmount)} ${fromCurrency}`,
+        value: 'Invalid expression',
+        detail: 'Use numbers, currency codes, and +, -, *, /',
       };
     }
 
     return {
-      value: `${formatMoney(smartConvertedResult, 4)} ${toCurrency}`,
-      detail: `${formatSmartNumber(evaluatedAmount)} ${fromCurrency}`,
+      value: `${formatMoney(smartMathResult.value, 4)} ${toCurrency}`,
+      detail: smartMathResult.breakdown,
     };
   })();
 
@@ -629,9 +678,9 @@ function CalculatorScreen({
         </>
       ) : (
         <>
-          <NumberDisplay
-            label="Smart expression"
+          <SmartExpressionDisplay
             value={smartExpression}
+            onChange={setSmartExpression}
             badge={<RateBadge label={`${fromCurrency}/${toCurrency}`} value={fiatRate === null ? '...' : formatMoney(fiatRate, 4)} stale={ratesData?.isStale} />}
           />
 

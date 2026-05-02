@@ -224,6 +224,32 @@ select {
   text-align: right;
 }
 
+.smart-expression-display {
+  min-height: 148px;
+}
+
+.smart-expression-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  font-family: "SFMono-Regular", "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: clamp(1.65rem, 7vw, 3.1rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  line-height: 1.08;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.smart-expression-input::selection {
+  color: #ffffff;
+  background: rgba(6, 182, 212, 0.34);
+}
+
 .rate-badge {
   flex: 0 0 auto;
   display: grid;
