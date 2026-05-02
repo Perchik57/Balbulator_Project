@@ -2,18 +2,51 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { fetchCryptoPrices, getCachedCryptoPrices } from './api/cryptoPrices';
 import { fetchFiatRates, getCachedFiatRates } from './api/exchangeRates';
 import { coins, currencies, defaultBaseCurrency } from './data/markets';
+import { useFavorites } from './favorites';
 import { initializeTelegramApp } from './telegram';
 import type { AppTab, CalculatorMode, Coin, CryptoPrices, Currency, FiatRates, TelegramLaunchState } from './types';
 
 const fiatBaseOptions = ['RUB', 'USD', 'EUR', 'CNY'];
-
 const navItems: Array<{ id: AppTab; label: string; icon: string }> = [
-  { id: 'calculator', label: 'Калькулятор', icon: '=' },
-  { id: 'fiat', label: 'Валюты', icon: '$' },
-  { id: 'crypto', label: 'Крипта', icon: 'B' },
+  { id: 'calculator', label: 'Calculator', icon: '=' },
+  { id: 'favorites', label: 'Favorites', icon: '★' },
+  { id: 'markets', label: 'Markets', icon: '↕' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
 const calculatorKeys = ['C', '⌫', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '='];
+const flagByCurrency: Record<string, string> = {
+  USD: '🇺🇸',
+  EUR: '🇪🇺',
+  RUB: '🇷🇺',
+  GBP: '🇬🇧',
+  CNY: '🇨🇳',
+  JPY: '🇯🇵',
+  CHF: '🇨🇭',
+  CAD: '🇨🇦',
+  AUD: '🇦🇺',
+  HKD: '🇭🇰',
+  SGD: '🇸🇬',
+  AED: '🇦🇪',
+  TRY: '🇹🇷',
+  INR: '🇮🇳',
+  BRL: '🇧🇷',
+  MXN: '🇲🇽',
+  KRW: '🇰🇷',
+  SEK: '🇸🇪',
+  NOK: '🇳🇴',
+  DKK: '🇩🇰',
+  PLN: '🇵🇱',
+  CZK: '🇨🇿',
+  HUF: '🇭🇺',
+  THB: '🇹🇭',
+  ZAR: '🇿🇦',
+  ILS: '🇮🇱',
+  SAR: '🇸🇦',
+  IDR: '🇮🇩',
+  MYR: '🇲🇾',
+  NZD: '🇳🇿',
+};
 
 const browserLaunchState: TelegramLaunchState = {
   isTelegram: false,
@@ -22,6 +55,11 @@ const browserLaunchState: TelegramLaunchState = {
   user: null,
   viewportHeight: null,
   stableViewportHeight: null,
+};
+
+type CalculatorSelection = {
+  code: string;
+  id: number;
 };
 
 function formatMoney(value: number, maximumFractionDigits = 2) {
@@ -48,7 +86,11 @@ function formatDate(value: string | number | Date) {
 }
 
 function formatUnixDate(value: number | null) {
-  return value ? formatDate(value * 1000) : 'время не указано';
+  return value ? formatDate(value * 1000) : 'No timestamp';
+}
+
+function getCurrency(code: string) {
+  return currencies.find((currency) => currency.code === code) ?? currencies[0];
 }
 
 function getCoin(code: string) {
@@ -81,41 +123,59 @@ function ChangeBadge({ value }: { value: number }) {
   return <span className={`change ${isPositive ? 'positive' : 'negative'}`}>{isPositive ? '+' : ''}{value.toFixed(2)}%</span>;
 }
 
-function LiveBadge({ stale }: { stale?: boolean }) {
-  return <span className={`live-badge ${stale ? 'stale' : ''}`}>{stale ? 'Кэш' : 'Live'}</span>;
-}
-
-function HeroCard({
-  label,
-  title,
-  value,
-  aside,
-}: {
-  label: string;
-  title: string;
-  value: string;
-  aside: string;
-}) {
+function RateBadge({ label, value, stale }: { label: string; value: string; stale?: boolean }) {
   return (
-    <div className="hero-card">
-      <div>
-        <span>{label}</span>
-        <strong>{title}</strong>
-      </div>
-      <div className="hero-value">
-        <strong>{value}</strong>
-        <span>{aside}</span>
-      </div>
+    <div className={`rate-badge ${stale ? 'stale' : ''}`} aria-live="polite">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-function MiniStat({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function LiveBadge({ stale }: { stale?: boolean }) {
+  return <span className={`live-badge ${stale ? 'stale' : ''}`}>{stale ? 'Cached' : 'Live'}</span>;
+}
+
+function FavoriteStar({ code, label }: { code: string; label?: string }) {
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const active = isFavorite(code);
+
   return (
-    <div className={`mini-stat ${muted ? 'muted' : ''}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <button
+      className={`favorite-star ${active ? 'active' : ''}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        toggleFavorite(code);
+      }}
+      type="button"
+      aria-label={label ?? `${active ? 'Remove' : 'Add'} ${code} favorite`}
+      aria-pressed={active}
+    >
+      {active ? '★' : '☆'}
+    </button>
+  );
+}
+
+function ScreenHeader({
+  eyebrow,
+  title,
+  meta,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  meta?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <header className="screen-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        {meta && <p className="screen-meta">{meta}</p>}
+      </div>
+      {action}
+    </header>
   );
 }
 
@@ -152,18 +212,134 @@ function StatusNotice({ type, children }: { type: 'loading' | 'error' | 'info'; 
   );
 }
 
-function LaunchContextCard({ state }: { state: TelegramLaunchState }) {
-  const userName = state.user
-    ? [state.user.first_name, state.user.last_name].filter(Boolean).join(' ') || state.user.username || `ID ${state.user.id}`
-    : null;
+function NumberDisplay({
+  label,
+  value,
+  result,
+  badge,
+}: {
+  label: string;
+  value: string;
+  result?: string;
+  badge?: ReactNode;
+}) {
+  return (
+    <section className="number-display" aria-live="polite">
+      <div className="display-topline">
+        <span>{label}</span>
+        {badge}
+      </div>
+      <strong className="display-number" key={value}>
+        {value}
+        <span className="display-cursor" aria-hidden="true" />
+      </strong>
+      {result && <p className="conversion-result">{result}</p>}
+    </section>
+  );
+}
+
+function CurrencyChips({
+  label,
+  value,
+  onChange,
+  options = currencies,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: Currency[];
+}) {
+  return (
+    <div className="chip-group" aria-label={label}>
+      <span>{label}</span>
+      <div className="chip-row">
+        {options.map((currency) => (
+          <div className="chip-shell" key={currency.code}>
+            <button
+              className={`chip currency-chip ${currency.code === value ? 'active' : ''}`}
+              onClick={() => onChange(currency.code)}
+              type="button"
+            >
+              <span aria-hidden="true">{flagByCurrency[currency.code] ?? '¤'}</span>
+              <strong>{currency.code}</strong>
+            </button>
+            <FavoriteStar code={currency.code} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoinChips({ value, onChange, options = coins }: { value: string; onChange: (value: string) => void; options?: Coin[] }) {
+  return (
+    <div className="chip-group" aria-label="Coin">
+      <span>Coin</span>
+      <div className="chip-row">
+        {options.map((coin) => (
+          <div className="chip-shell" key={coin.code}>
+            <button
+              className={`chip coin-chip ${coin.code === value ? 'active' : ''}`}
+              onClick={() => onChange(coin.code)}
+              type="button"
+            >
+              <strong>{coin.code}</strong>
+            </button>
+            <FavoriteStar code={coin.code} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MyFavoritesRow({ onSelect }: { onSelect: (code: string) => void }) {
+  const { favorites } = useFavorites();
+  const visibleFavorites = favorites.filter((code) => currencies.some((currency) => currency.code === code) || coins.some((coin) => coin.code === code));
+
+  if (visibleFavorites.length === 0) return null;
 
   return (
-    <div className="launch-context-card" aria-label="Launch context">
-      <div>
-        <span>{state.isTelegram ? 'Telegram Mini App' : 'Browser mode'}</span>
-        <strong>{userName ?? (state.isTelegram ? 'User data unavailable' : 'Local development')}</strong>
+    <div className="chip-group my-favorites" aria-label="My Favorites">
+      <span>My Favorites</span>
+      <div className="chip-row">
+        {visibleFavorites.map((code) => {
+          const currency = getCurrency(code);
+          const isCurrency = currencies.some((item) => item.code === code);
+          return (
+            <button className="chip favorite-chip" key={code} onClick={() => onSelect(code)} type="button">
+              <span aria-hidden="true">{isCurrency ? flagByCurrency[code] ?? currency.symbol : getCoin(code).code.slice(0, 2)}</span>
+              <strong>{code}</strong>
+            </button>
+          );
+        })}
       </div>
-      <span className="launch-chip">{state.platform}</span>
+    </div>
+  );
+}
+
+function Keypad({ onPress }: { onPress: (key: string) => void }) {
+  return (
+    <div className="keypad" aria-label="Calculator keypad">
+      {calculatorKeys.map((key) => (
+        <button
+          className={`${['÷', '×', '-', '+', '='].includes(key) ? 'operator' : ''} ${key === '=' ? 'equals' : ''}`}
+          key={key}
+          onClick={() => onPress(key)}
+          type="button"
+        >
+          {key}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ResultValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="result-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -174,12 +350,14 @@ function CalculatorScreen({
   ratesLoading,
   cryptoData,
   cryptoLoading,
+  selection,
 }: {
   ratesData: FiatRates | null;
   rubRate: number | null;
   ratesLoading: boolean;
   cryptoData: CryptoPrices | null;
   cryptoLoading: boolean;
+  selection: CalculatorSelection | null;
 }) {
   const [mode, setMode] = useState<CalculatorMode>('standard');
   const [expression, setExpression] = useState('0');
@@ -188,24 +366,73 @@ function CalculatorScreen({
   const [toCurrency, setToCurrency] = useState('RUB');
   const [coinCode, setCoinCode] = useState('BTC');
 
+  const selectFavoriteInCalculator = useCallback((code: string) => {
+    if (currencies.some((currency) => currency.code === code)) {
+      setMode('fiat');
+      setFromCurrency(code);
+      return;
+    }
+
+    if (coins.some((coinItem) => coinItem.code === code)) {
+      setMode('crypto');
+      setCoinCode(code);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selection) {
+      selectFavoriteInCalculator(selection.code);
+    }
+  }, [selection, selectFavoriteInCalculator]);
+
   const numericAmount = Number(amount) || 0;
-  const btcPrice = getCoinPrice(cryptoData, 'BTC');
+  const coin = getCoin(coinCode);
+  const coinPrice = getCoinPrice(cryptoData, coinCode);
+  const fiatRate = getCurrencyRate(ratesData, fromCurrency, toCurrency);
   const fiatResult = useMemo(
     () => convertCurrency(numericAmount, fromCurrency, toCurrency, ratesData),
     [fromCurrency, numericAmount, ratesData, toCurrency],
   );
   const cryptoResult = useMemo(() => {
     const price = getCoinPrice(cryptoData, coinCode);
-    const usd = price ? numericAmount * price.usd : null;
-
-    return {
-      usd,
-      rub: price ? numericAmount * price.rub : null,
-    };
+    return price ? numericAmount * price.usd : null;
   }, [coinCode, cryptoData, numericAmount]);
+
+  const displayValue = mode === 'standard' ? expression : amount;
+  const displayResult = mode === 'fiat'
+    ? `= ${fiatResult === null ? 'Rate unavailable' : `${formatMoney(fiatResult, 4)} ${toCurrency}`}`
+    : mode === 'crypto'
+      ? `= ${cryptoResult === null ? 'Price loading' : `$${formatMoney(cryptoResult, 2)}`}`
+      : undefined;
+  const displayBadge = mode === 'fiat'
+    ? <RateBadge label={`${fromCurrency}/${toCurrency}`} value={fiatRate === null ? '...' : formatMoney(fiatRate, 4)} stale={ratesData?.isStale} />
+    : mode === 'crypto'
+      ? <RateBadge label={coin.code} value={coinPrice ? `$${formatCompact(coinPrice.usd)}` : cryptoLoading ? '...' : '—'} stale={cryptoData?.isStale} />
+      : <RateBadge label="USD/RUB" value={rubRate ? formatMoney(rubRate, 2) : ratesLoading ? '...' : '—'} stale={ratesData?.isStale} />;
+
+  const setNumericInput = (key: string) => {
+    if (key === 'C') {
+      setAmount('0');
+      return;
+    }
+
+    if (key === '⌫') {
+      setAmount((current) => (current.length > 1 ? current.slice(0, -1) : '0'));
+      return;
+    }
+
+    if (key === '.' && amount.includes('.')) return;
+    if (!/^\d|\.$/.test(key)) return;
+    setAmount((current) => (current === '0' && key !== '.' ? key : `${current}${key}`));
+  };
 
   const pushKey = (key: string) => {
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged();
+
+    if (mode !== 'standard') {
+      setNumericInput(key);
+      return;
+    }
 
     if (key === 'C') {
       setExpression('0');
@@ -218,7 +445,7 @@ function CalculatorScreen({
     }
 
     if (key === '=') {
-      const sanitized = expression.replaceAll('×', '*').replaceAll('÷', '/');
+      const sanitized = expression.split('×').join('*').split('÷').join('/');
       if (!/^[\d+\-*/.()%\s]+$/.test(sanitized)) return;
 
       try {
@@ -235,219 +462,210 @@ function CalculatorScreen({
 
   return (
     <section className="screen calculator-screen">
-      <header className="screen-header">
-        <div>
-          <p className="eyebrow">Быстро</p>
-          <h1>Калькулятор</h1>
-          <p className="screen-copy">Считайте суммы и сразу переводите в валюты или крипту.</p>
-        </div>
-      </header>
+      <ScreenHeader eyebrow="Balbulator" title="Calculator" meta={mode === 'standard' ? 'Standard' : mode === 'fiat' ? 'Fiat conversion' : 'Crypto conversion'} />
+
+      <NumberDisplay label={mode === 'standard' ? 'Expression' : 'Amount'} value={displayValue} result={displayResult} badge={displayBadge} />
 
       <Segment
         value={mode}
         onChange={setMode}
         options={[
-          { value: 'standard', label: 'Обычный' },
-          { value: 'fiat', label: 'Валюты' },
-          { value: 'crypto', label: 'Крипта' },
+          { value: 'standard', label: 'Calc' },
+          { value: 'fiat', label: 'Fiat' },
+          { value: 'crypto', label: 'Crypto' },
         ]}
       />
 
-      <div className="stat-strip">
-        <MiniStat label="USD/RUB" value={rubRate ? formatMoney(rubRate, 2) : ratesLoading ? 'Загрузка' : '—'} muted={!rubRate} />
-        <MiniStat label="BTC" value={btcPrice ? `$${formatCompact(btcPrice.usd)}` : cryptoLoading ? 'Загрузка' : '—'} muted={!btcPrice} />
-      </div>
-
-      {mode === 'standard' && (
-        <div className="calculator-pad">
-          <div className="display" aria-live="polite">
-            <span>Расчет</span>
-            <strong>{expression}</strong>
-          </div>
-          <div className="keys">
-            {calculatorKeys.map((key) => (
-              <button
-                className={`${['÷', '×', '-', '+', '='].includes(key) ? 'operator' : ''} ${key === '=' ? 'equals' : ''}`}
-                key={key}
-                onClick={() => pushKey(key)}
-                type="button"
-              >
-                {key}
-              </button>
-            ))}
-          </div>
+      {mode === 'fiat' && (
+        <div className="glass-card stack">
+          <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
+          <CurrencyChips label="From" value={fromCurrency} onChange={setFromCurrency} options={currencies.slice(0, 12)} />
+          <CurrencyChips label="To" value={toCurrency} onChange={setToCurrency} options={currencies.slice(0, 12)} />
         </div>
       )}
 
-      {mode === 'fiat' && (
-        <ConverterPanel amount={amount} setAmount={setAmount}>
-          {ratesLoading && !ratesData && <StatusNotice type="loading">Загружаем актуальные курсы...</StatusNotice>}
-          <CurrencySelect label="Из" value={fromCurrency} onChange={setFromCurrency} />
-          <CurrencySelect label="В" value={toCurrency} onChange={setToCurrency} />
-          <ResultValue label="Результат" value={fiatResult === null ? 'Курс недоступен' : `${formatMoney(fiatResult, 4)} ${toCurrency}`} />
-        </ConverterPanel>
+      {mode === 'crypto' && (
+        <div className="glass-card stack">
+          <MyFavoritesRow onSelect={selectFavoriteInCalculator} />
+          <CoinChips value={coinCode} onChange={setCoinCode} />
+          <ResultValue label="RUB" value={coinPrice ? `${formatMoney(numericAmount * coinPrice.rub, 2)} ₽` : 'Price loading'} />
+        </div>
       )}
 
-      {mode === 'crypto' && (
-        <ConverterPanel amount={amount} setAmount={setAmount}>
-          {cryptoLoading && !cryptoData && <StatusNotice type="loading">Загружаем цены криптовалют...</StatusNotice>}
-          <CoinSelect value={coinCode} onChange={setCoinCode} />
-          <ResultValue label="USD" value={cryptoResult.usd === null ? 'Цена загружается' : `$${formatMoney(cryptoResult.usd, 2)}`} />
-          <ResultValue label="RUB" value={cryptoResult.rub === null ? 'Цена загружается' : `${formatMoney(cryptoResult.rub, 2)} ₽`} />
-        </ConverterPanel>
+      <Keypad onPress={pushKey} />
+    </section>
+  );
+}
+
+function FavoriteCard({
+  code,
+  ratesData,
+  cryptoData,
+  onSelect,
+}: {
+  code: string;
+  ratesData: FiatRates | null;
+  cryptoData: CryptoPrices | null;
+  onSelect: (code: string) => void;
+}) {
+  const currency = currencies.find((item) => item.code === code);
+  const coin = coins.find((item) => item.code === code);
+  const cryptoPrice = coin ? getCoinPrice(cryptoData, coin.code) : null;
+  const rateVsUsd = currency
+    ? getUsdRate(ratesData, currency.code)
+    : cryptoPrice?.usd ?? null;
+  const title = currency?.code ?? coin?.code ?? code;
+  const name = currency?.name ?? coin?.name ?? 'Unknown asset';
+  const marker = currency ? flagByCurrency[currency.code] ?? currency.symbol : coin?.code.slice(0, 2) ?? '¤';
+  const rateLabel = currency
+    ? rateVsUsd === null ? 'USD rate unavailable' : `1 USD = ${formatMoney(rateVsUsd, 4)} ${currency.code}`
+    : rateVsUsd === null ? 'USD price unavailable' : `$${formatMoney(rateVsUsd, 2)}`;
+
+  return (
+    <article className="favorite-card">
+      <button className="favorite-card-main" onClick={() => onSelect(code)} type="button">
+        <span className={`favorite-card-icon ${coin ? 'crypto' : ''}`}>{marker}</span>
+        <strong>{title}</strong>
+        <span>{name}</span>
+        <em>{rateLabel}</em>
+      </button>
+      <FavoriteStar code={code} label={`Remove ${code} favorite`} />
+    </article>
+  );
+}
+
+function FavoritesScreen({
+  ratesData,
+  cryptoData,
+  onSelectFavorite,
+}: {
+  ratesData: FiatRates | null;
+  cryptoData: CryptoPrices | null;
+  onSelectFavorite: (code: string) => void;
+}) {
+  const { favorites } = useFavorites();
+  const visibleFavorites = favorites.filter((code) => currencies.some((currency) => currency.code === code) || coins.some((coin) => coin.code === code));
+
+  return (
+    <section className="screen">
+      <ScreenHeader eyebrow="Pinned" title="Favorites" meta={`${visibleFavorites.length} tracked assets`} />
+
+      {visibleFavorites.length === 0 ? (
+        <div className="empty-state favorites-empty">No favorites yet. Star a currency to add it here</div>
+      ) : (
+        <div className="favorite-grid">
+          {visibleFavorites.map((code) => (
+            <FavoriteCard code={code} ratesData={ratesData} cryptoData={cryptoData} onSelect={onSelectFavorite} key={code} />
+          ))}
+        </div>
       )}
     </section>
   );
 }
 
-function ConverterPanel({
-  amount,
-  setAmount,
-  children,
-}: {
-  amount: string;
-  setAmount: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="converter-panel">
-      <label className="field">
-        <span>Сумма</span>
-        <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} aria-label="Сумма" />
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function CurrencySelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
-        {currencies.map((currency) => (
-          <option value={currency.code} key={currency.code}>
-            {currency.code} · {currency.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function CoinSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="field">
-      <span>Монета</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label="Монета">
-        {coins.map((coin) => (
-          <option value={coin.code} key={coin.code}>
-            {coin.code} · {coin.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ResultValue({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="result-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function FiatScreen({
+function MarketsScreen({
   ratesData,
-  isLoading,
-  error,
-  onRefresh,
+  ratesLoading,
+  ratesError,
+  cryptoData,
+  cryptoLoading,
+  cryptoError,
+  onRefreshRates,
+  onRefreshCrypto,
 }: {
   ratesData: FiatRates | null;
-  isLoading: boolean;
-  error: string | null;
-  onRefresh: () => void;
+  ratesLoading: boolean;
+  ratesError: string | null;
+  cryptoData: CryptoPrices | null;
+  cryptoLoading: boolean;
+  cryptoError: string | null;
+  onRefreshRates: () => void;
+  onRefreshCrypto: () => void;
 }) {
+  const [marketType, setMarketType] = useState<'fiat' | 'crypto'>('fiat');
   const [baseCurrency, setBaseCurrency] = useState(defaultBaseCurrency);
   const [query, setQuery] = useState('');
-
   const baseRate = getUsdRate(ratesData, baseCurrency);
-  const usdToBase = getCurrencyRate(ratesData, 'USD', baseCurrency);
+  const latestUpdate = Math.max(
+    0,
+    ...Object.values(cryptoData?.prices ?? {})
+      .map((price) => price.lastUpdatedAt ?? 0),
+  );
+
   const normalizedQuery = query.trim().toLowerCase();
   const filteredCurrencies = currencies.filter((currency) => {
     const searchable = `${currency.code} ${currency.name} ${currency.country}`.toLowerCase();
     return searchable.includes(normalizedQuery);
   });
+  const filteredCoins = coins.filter((coin) => `${coin.code} ${coin.name}`.toLowerCase().includes(normalizedQuery));
 
   return (
     <section className="screen">
-      <header className="screen-header">
-        <div>
-          <p className="eyebrow">Топ-30</p>
-          <h1>Валюты</h1>
-          <p className="updated">
-            {ratesData ? `Обновлено ${formatDate(ratesData.lastUpdatedAt)}` : isLoading ? 'Загружаем курсы' : 'Курсы пока недоступны'}
-          </p>
-        </div>
-        <button className="icon-button" onClick={onRefresh} type="button" aria-label="Обновить" disabled={isLoading}>
-          ↻
-        </button>
-      </header>
-
-      <HeroCard
-        label="Базовая валюта"
-        title={baseCurrency}
-        value={usdToBase === null ? '—' : `1 USD = ${formatMoney(usdToBase, 4)} ${baseCurrency}`}
-        aside={`${filteredCurrencies.length} из ${currencies.length} валют`}
+      <ScreenHeader
+        eyebrow="Live rates"
+        title="Markets"
+        meta={marketType === 'fiat'
+          ? ratesData ? `Updated ${formatDate(ratesData.lastUpdatedAt)}` : ratesLoading ? 'Loading fiat rates' : 'Fiat unavailable'
+          : cryptoData ? `Updated ${formatUnixDate(latestUpdate)}` : cryptoLoading ? 'Loading crypto prices' : 'Crypto unavailable'}
+        action={(
+          <button className="icon-button" onClick={marketType === 'fiat' ? onRefreshRates : onRefreshCrypto} type="button" aria-label="Refresh" disabled={marketType === 'fiat' ? ratesLoading : cryptoLoading}>
+            ↻
+          </button>
+        )}
       />
 
-      {isLoading && !ratesData && <StatusNotice type="loading">Получаем свежие курсы валют...</StatusNotice>}
-      {error && <StatusNotice type="error">{error}</StatusNotice>}
-      {ratesData?.isStale && !error && <StatusNotice type="info">Показываем сохраненные курсы, пока обновление недоступно.</StatusNotice>}
-      <a className="source-note" href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">
-        Rates by ExchangeRate-API
-      </a>
+      <Segment
+        value={marketType}
+        onChange={setMarketType}
+        options={[
+          { value: 'fiat', label: 'Fiat' },
+          { value: 'crypto', label: 'Crypto' },
+        ]}
+      />
+
+      {(ratesLoading && !ratesData && marketType === 'fiat') && <StatusNotice type="loading">Loading fiat rates...</StatusNotice>}
+      {(cryptoLoading && !cryptoData && marketType === 'crypto') && <StatusNotice type="loading">Loading crypto prices...</StatusNotice>}
+      {marketType === 'fiat' && ratesError && <StatusNotice type="error">{ratesError}</StatusNotice>}
+      {marketType === 'crypto' && cryptoError && <StatusNotice type="error">{cryptoError}</StatusNotice>}
+      {marketType === 'fiat' && ratesData?.isStale && !ratesError && <StatusNotice type="info">Showing cached fiat rates.</StatusNotice>}
+      {marketType === 'crypto' && cryptoData?.isStale && !cryptoError && <StatusNotice type="info">Showing cached crypto prices.</StatusNotice>}
 
       <div className="toolbar">
         <label className="search">
           <span>⌕</span>
-          <input placeholder="USD, EUR, RUB" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Поиск валюты" />
+          <input placeholder="Search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search markets" />
         </label>
-        <label className="base-select">
-          <span>База</span>
-          <select value={baseCurrency} onChange={(event) => setBaseCurrency(event.target.value)} aria-label="Базовая валюта">
+        {marketType === 'fiat' && (
+          <div className="base-chips">
             {fiatBaseOptions.map((code) => (
-              <option value={code} key={code}>{code}</option>
+              <button className={code === baseCurrency ? 'active' : ''} key={code} onClick={() => setBaseCurrency(code)} type="button">
+                {code}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        )}
       </div>
 
       <div className="market-list">
-        {filteredCurrencies.map((currency) => {
+        {marketType === 'fiat' && filteredCurrencies.map((currency) => {
           const rateToBase = baseRate ? getCurrencyRate(ratesData, currency.code, baseCurrency) : null;
           return (
             <CurrencyRow
               currency={currency}
               rate={rateToBase}
               baseCode={baseCurrency}
-              loading={isLoading && !ratesData}
+              loading={ratesLoading && !ratesData}
               stale={ratesData?.isStale}
               key={currency.code}
             />
           );
         })}
-        {filteredCurrencies.length === 0 && <div className="empty-state">Валюта не найдена</div>}
+
+        {marketType === 'crypto' && filteredCoins.map((coin) => (
+          <CryptoRow coin={coin} price={getCoinPrice(cryptoData, coin.code)} loading={cryptoLoading && !cryptoData} stale={cryptoData?.isStale} key={coin.code} />
+        ))}
+
+        {(marketType === 'fiat' ? filteredCurrencies.length : filteredCoins.length) === 0 && <div className="empty-state">No matches</div>}
       </div>
     </section>
   );
@@ -469,98 +687,21 @@ function CurrencyRow({
   return (
     <article className="market-row">
       <div className="asset-badge">
-        <span>{currency.symbol}</span>
+        <span>{flagByCurrency[currency.code] ?? currency.symbol}</span>
       </div>
       <div className="asset-main">
         <div className="asset-title">
           <strong>{currency.code}</strong>
           <LiveBadge stale={stale} />
         </div>
-        <span>{currency.name} · {currency.country}</span>
+        <span>{currency.name}</span>
       </div>
       <div className="asset-price">
         <strong>{loading ? '...' : rate === null ? '—' : formatMoney(rate, 4)}</strong>
         <span>{baseCode}</span>
       </div>
+      <FavoriteStar code={currency.code} />
     </article>
-  );
-}
-
-function CryptoScreen({
-  cryptoData,
-  isLoading,
-  error,
-  onRefresh,
-}: {
-  cryptoData: CryptoPrices | null;
-  isLoading: boolean;
-  error: string | null;
-  onRefresh: () => void;
-}) {
-  const [coinCode, setCoinCode] = useState('BTC');
-  const [amount, setAmount] = useState('0.25');
-  const coin = getCoin(coinCode);
-  const selectedPrice = getCoinPrice(cryptoData, coinCode);
-  const numericAmount = Number(amount) || 0;
-  const usdResult = selectedPrice ? numericAmount * selectedPrice.usd : null;
-  const rubResult = selectedPrice ? numericAmount * selectedPrice.rub : null;
-  const latestUpdate = Math.max(
-    0,
-    ...Object.values(cryptoData?.prices ?? {})
-      .map((price) => price.lastUpdatedAt ?? 0),
-  );
-
-  return (
-    <section className="screen">
-      <header className="screen-header">
-        <div>
-          <p className="eyebrow">Популярное</p>
-          <h1>Крипта</h1>
-          <p className="screen-copy">
-            {cryptoData ? `Обновлено ${formatUnixDate(latestUpdate)}` : isLoading ? 'Загружаем цены' : 'Цены пока недоступны'}
-          </p>
-        </div>
-        <button className="icon-button" onClick={onRefresh} type="button" aria-label="Обновить криптовалюты" disabled={isLoading}>
-          ↻
-        </button>
-      </header>
-
-      {isLoading && !cryptoData && <StatusNotice type="loading">Получаем свежие цены криптовалют...</StatusNotice>}
-      {error && <StatusNotice type="error">{error}</StatusNotice>}
-      {cryptoData?.isStale && !error && <StatusNotice type="info">Показываем сохраненные цены, пока обновление недоступно.</StatusNotice>}
-      <a className="source-note" href="https://www.coingecko.com" target="_blank" rel="noreferrer">
-        Prices by CoinGecko
-      </a>
-
-      <div className="quick-converter">
-        <div className="converter-head">
-          <div>
-            <span>Быстрый конвертер</span>
-            <strong>{coin.name}</strong>
-          </div>
-          {selectedPrice?.change24h === null || selectedPrice?.change24h === undefined ? <LiveBadge stale={cryptoData?.isStale} /> : <ChangeBadge value={selectedPrice.change24h} />}
-        </div>
-        <CoinSelect value={coinCode} onChange={setCoinCode} />
-        <label className="field">
-          <span>Количество</span>
-          <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} aria-label="Количество монет" />
-        </label>
-        <div className="quick-grid">
-          <ResultValue label="USD" value={usdResult === null ? 'Цена загружается' : `$${formatMoney(usdResult, 2)}`} />
-          <ResultValue label="RUB" value={rubResult === null ? 'Цена загружается' : `${formatMoney(rubResult, 2)} ₽`} />
-        </div>
-      </div>
-
-      <div className="market-list">
-        <div className="section-title">
-          <strong>Монеты</strong>
-          <span>USD / RUB</span>
-        </div>
-        {coins.map((item) => (
-          <CryptoRow coin={item} price={getCoinPrice(cryptoData, item.code)} loading={isLoading && !cryptoData} stale={cryptoData?.isStale} key={item.code} />
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -591,12 +732,51 @@ function CryptoRow({
         <strong>{loading ? '...' : price === null ? '—' : `$${formatCompact(price.usd)}`}</strong>
         <span>{loading ? 'RUB ...' : price === null ? 'RUB —' : `${formatCompact(price.rub)} ₽`}</span>
       </div>
+      <FavoriteStar code={coin.code} />
     </article>
   );
 }
 
+function SettingsScreen({
+  telegramState,
+  ratesData,
+  cryptoData,
+}: {
+  telegramState: TelegramLaunchState;
+  ratesData: FiatRates | null;
+  cryptoData: CryptoPrices | null;
+}) {
+  const userName = telegramState.user
+    ? [telegramState.user.first_name, telegramState.user.last_name].filter(Boolean).join(' ') || telegramState.user.username || `ID ${telegramState.user.id}`
+    : telegramState.isTelegram ? 'Telegram user' : 'Local development';
+
+  return (
+    <section className="screen">
+      <ScreenHeader eyebrow="Preferences" title="Settings" meta={telegramState.isTelegram ? 'Telegram Mini App' : 'Browser mode'} />
+
+      <div className="glass-card settings-card">
+        <div>
+          <span>Profile</span>
+          <strong>{userName}</strong>
+        </div>
+        <span className="settings-chip">{telegramState.platform}</span>
+      </div>
+
+      <div className="settings-list">
+        <ResultValue label="Theme" value={telegramState.colorScheme} />
+        <ResultValue label="Fiat source" value={ratesData?.provider ?? 'ExchangeRate-API'} />
+        <ResultValue label="Crypto source" value={cryptoData?.provider ?? 'CoinGecko'} />
+        <ResultValue label="Fiat cache" value={ratesData?.isStale ? 'Cached' : ratesData ? 'Live' : 'Empty'} />
+        <ResultValue label="Crypto cache" value={cryptoData?.isStale ? 'Cached' : cryptoData ? 'Live' : 'Empty'} />
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
+  const { favorites } = useFavorites();
   const [tab, setTab] = useState<AppTab>('calculator');
+  const [calculatorSelection, setCalculatorSelection] = useState<CalculatorSelection | null>(null);
   const [ratesData, setRatesData] = useState<FiatRates | null>(() => getCachedFiatRates({ allowExpired: true }));
   const [ratesLoading, setRatesLoading] = useState(() => !getCachedFiatRates());
   const [ratesError, setRatesError] = useState<string | null>(null);
@@ -626,9 +806,9 @@ export default function App() {
 
       if (fallback) {
         setRatesData({ ...fallback, isStale: true });
-        setRatesError('Не удалось обновить курсы. Показываем сохраненные данные.');
+        setRatesError('Could not refresh fiat rates. Showing cached data.');
       } else {
-        setRatesError('Не удалось загрузить курсы. Проверьте соединение и попробуйте обновить.');
+        setRatesError('Could not load fiat rates.');
       }
     } finally {
       setRatesLoading(false);
@@ -656,9 +836,9 @@ export default function App() {
 
       if (fallback) {
         setCryptoData({ ...fallback, isStale: true });
-        setCryptoError('Не удалось обновить криптоцены. Показываем сохраненные данные.');
+        setCryptoError('Could not refresh crypto prices. Showing cached data.');
       } else {
-        setCryptoError('Не удалось загрузить криптоцены. Проверьте соединение и попробуйте обновить.');
+        setCryptoError('Could not load crypto prices.');
       }
     } finally {
       setCryptoLoading(false);
@@ -678,20 +858,42 @@ export default function App() {
   }, [loadCryptoPrices]);
 
   const rubRate = getUsdRate(ratesData, 'RUB');
+  const selectFavoriteInCalculator = (code: string) => {
+    setCalculatorSelection({ code, id: Date.now() });
+    setTab('calculator');
+  };
 
   const screen = {
-    calculator: <CalculatorScreen ratesData={ratesData} rubRate={rubRate} ratesLoading={ratesLoading} cryptoData={cryptoData} cryptoLoading={cryptoLoading} />,
-    fiat: <FiatScreen ratesData={ratesData} isLoading={ratesLoading} error={ratesError} onRefresh={() => void loadFiatRates(true)} />,
-    crypto: <CryptoScreen cryptoData={cryptoData} isLoading={cryptoLoading} error={cryptoError} onRefresh={() => void loadCryptoPrices(true)} />,
+    calculator: (
+      <CalculatorScreen
+        ratesData={ratesData}
+        rubRate={rubRate}
+        ratesLoading={ratesLoading}
+        cryptoData={cryptoData}
+        cryptoLoading={cryptoLoading}
+        selection={calculatorSelection}
+      />
+    ),
+    favorites: <FavoritesScreen ratesData={ratesData} cryptoData={cryptoData} onSelectFavorite={selectFavoriteInCalculator} />,
+    markets: (
+      <MarketsScreen
+        ratesData={ratesData}
+        ratesLoading={ratesLoading}
+        ratesError={ratesError}
+        cryptoData={cryptoData}
+        cryptoLoading={cryptoLoading}
+        cryptoError={cryptoError}
+        onRefreshRates={() => void loadFiatRates(true)}
+        onRefreshCrypto={() => void loadCryptoPrices(true)}
+      />
+    ),
+    settings: <SettingsScreen telegramState={telegramState} ratesData={ratesData} cryptoData={cryptoData} />,
   }[tab];
 
   return (
     <main className="app-shell">
-      <div className="app-content">
-        <LaunchContextCard state={telegramState} />
-        {screen}
-      </div>
-      <nav className="bottom-nav" aria-label="Основная навигация">
+      <div className="app-content">{screen}</div>
+      <nav className="bottom-nav" aria-label="Main navigation">
         {navItems.map((item) => (
           <button
             className={tab === item.id ? 'active' : ''}
@@ -703,6 +905,7 @@ export default function App() {
             type="button"
           >
             <span className="nav-icon">{item.icon}</span>
+            {item.id === 'favorites' && favorites.length > 0 && <span className="nav-badge">{favorites.length}</span>}
             <span>{item.label}</span>
           </button>
         ))}

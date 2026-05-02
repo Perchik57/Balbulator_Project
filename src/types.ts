@@ -1,4 +1,4 @@
-export type AppTab = 'calculator' | 'fiat' | 'crypto';
+export type AppTab = 'calculator' | 'favorites' | 'markets' | 'settings';
 
 export type CalculatorMode = 'standard' | 'fiat' | 'crypto';
 
